@@ -1,75 +1,61 @@
 module GaiaDemo exposing (..)
 
 import Dict
-
-
-type alias Footprint =
-    { air : Float --   cubic meters per unit
-    , water : Float -- liters per unit
-    , land : Float --  square meters per unit
-    }
+import Footprint exposing (Footprint)
 
 
 {-| Products table.
 
     get "Endangered species chocolate (bar)"
-    --> Just { footprint = {air = 0, water = 0, land = 0 }, price = 5.0, requires = [ ( "Cocoa (g)", 74.8 ), ( "Sugar (g)", 13.2 ) ] }
+    --> Just { footprint = {air = 0, water = 0, land = 0 }, requires = [ ( "Cocoa (g)", 74.8 ), ( "Sugar (g)", 13.2 ) ] }
 
 -}
-get : String -> Maybe { footprint : Footprint, price : Float, requires : List ( String, Float ) }
+get : String -> Maybe { footprint : Footprint, requires : List ( String, Float ) }
 get name =
     Dict.fromList
         [ ( "Endangered species chocolate (bar)"
-          , { footprint = { air = 0, water = 0, land = 0 }
-            , price = 5.0
-            , requires = [ ( "Cocoa (g)", 74.8 ), ( "Sugar (g)", 13.2 ) ]
-            }
+          , { footprint = { air = 0, water = 0, land = 0 }, requires = [ ( "Cocoa (g)", 74.8 ), ( "Sugar (g)", 13.2 ) ] }
           )
         , ( "KitKat (bar)"
-          , { footprint = { air = 0, water = 0, land = 0 }
-            , price = 1.5
-            , requires = [ ( "Cocoa (g)", 83.82 ), ( "Sugar (g)", 43.18 ) ]
-            }
+          , { footprint = { air = 0, water = 0, land = 0 }, requires = [ ( "Cocoa (g)", 83.82 ), ( "Sugar (g)", 43.18 ) ] }
           )
-        , ( "Cocoa (g)", { footprint = { air = 0, water = 17, land = 0.02 }, requires = [], price = 0 } )
-        , ( "Sugar (g)", { footprint = { air = 0, water = 17, land = 0.02 }, requires = [], price = 0 } )
+        , ( "Cocoa (g)"
+          , { footprint = { air = 0, water = 17, land = 0.02 }, requires = [] }
+          )
+        , ( "Sugar (g)"
+          , { footprint = { air = 0, water = 17, land = 0.02 }, requires = [] }
+          )
         ]
         |> Dict.get name
 
 
 {-| Collect the footprint for a single unit of a product (recursive).
 
-    collect "Cocoa (g)" --> Just { footprint = { air = 0, water = 17, land = 0.02 }, price = 0 }
+    collect "Cocoa (g)" --> Just { air = 0, water = 17, land = 0.02 }
 
-    collect "Endangered species chocolate (bar)" --> Just { footprint = { air = 0, water = 1496.0, land = 1.76 }, price = 5.0 }
+    collect "Endangered species chocolate (bar)" --> Just { air = 0, water = 1496.0, land = 1.76 }
 
 -}
-collect : String -> Maybe { footprint : Footprint, price : Float }
+collect : String -> Maybe Footprint
 collect productName =
     Maybe.andThen
-        (\{ footprint, price, requires } ->
+        (\{ footprint, requires } ->
             List.foldl
-                (Maybe.map2 (\x y -> { air = x.air + y.air, water = x.water + y.water, land = x.land + y.land }))
+                (Maybe.map2 (Footprint.map2 (+)))
                 (Just footprint)
-                (List.map collectMany requires |> List.map (Maybe.map .footprint))
-                |> Maybe.map (\fp -> { footprint = fp, price = price })
+                (List.map collectMany requires)
         )
         (get productName)
 
 
 {-| Collect the footprint for multiple units of a product (recursive).
 
-    collectMany ( "Cocoa (g)", 2 ) --> Just { footprint = { air = 0, water = 34, land = 0.04 }, price = 0 }
+    collectMany ( "Cocoa (g)", 2 ) --> Just { air = 0, water = 34, land = 0.04 }
 
 -}
-collectMany : ( String, Float ) -> Maybe { footprint : Footprint, price : Float }
+collectMany : ( String, Float ) -> Maybe Footprint
 collectMany ( productName, units ) =
-    Maybe.map
-        (\{ footprint, price } ->
-            { footprint = { air = footprint.air * units, water = footprint.water * units, land = footprint.land * units }
-            , price = price
-            }
-        )
+    Maybe.map (Footprint.map ((*) units))
         (collect productName)
 
 
@@ -77,21 +63,32 @@ collectMany ( productName, units ) =
 -- Score microservices
 
 
-{-| Gaia ratio for a product.
+{-| Gaia ratio for a footprint.
 
-    collect "Endangered species chocolate (bar)"
-        |> Maybe.andThen gaiaRatio
-    --> Just 0.860552407644582
+    collect "Endangered species chocolate (bar)" |> Maybe.andThen gaiaRatio --> Just 0.5891925720026621
 
-    collect "KitKat (bar)"
-        |> Maybe.andThen gaiaRatio
-    --> Just 0.3291725670781022
+    collect "KitKat (bar)" |> Maybe.andThen gaiaRatio --> Just 0.49844456650070046
 
 -}
-gaiaRatio : { footprint : Footprint, price : Float } -> Maybe Float
-gaiaRatio { footprint, price } =
-    Maybe.map (\cost -> (price - cost) / price)
+gaiaRatio : Footprint -> Maybe Float
+gaiaRatio footprint =
+    Maybe.map (\cost -> 1 / (1 + cost))
         (footprintCost footprint)
+
+
+{-| Calculate the footprint cost in dollars.
+
+    collect "Endangered species chocolate (bar)" |> Maybe.andThen footprintCost --> Just 0.6972379617770906
+
+    collect "KitKat (bar)" |> Maybe.andThen footprintCost --> Just 1.0062411493828467
+
+-}
+footprintCost : Footprint -> Maybe Float
+footprintCost { air, water, land } =
+    Maybe.map3 (\x y z -> x + y + z)
+        (airCost air)
+        (waterCost water)
+        (landCost land)
 
 
 
@@ -133,11 +130,3 @@ landCost squareMeters =
             220 / 4047
     in
     Just (squareMeters * dollarsPerSquareMeter)
-
-
-footprintCost : Footprint -> Maybe Float
-footprintCost { air, water, land } =
-    Maybe.map3 (\x y z -> x + y + z)
-        (airCost air)
-        (waterCost water)
-        (landCost land)
