@@ -3,104 +3,74 @@ module GaiaDemo exposing (..)
 import Dict
 
 
-type alias Product =
-    { materials : Materials
-    , price : Float
-    }
-
-
-type alias Materials =
-    List ( String, Float )
-
-
-type alias Metrics =
-    { cost : Float, price : Float }
-
-
-type alias Resources =
-    { airCubicMeters : Float -- TODO: is this something like carbon emissions?
-    , waterLitersPerUnit : Float
-    , unitsPerHectare : Float
+type alias Footprint =
+    { air : Float --   cubic meters per unit
+    , water : Float -- liters per unit
+    , land : Float --  square meters per unit
     }
 
 
 {-| Products table.
 
-    getProduct "Endangered species chocolate"
-    --> Just { materials = [ ( "Cocoa", 74.8 ), ( "Sugar", 13.2 ) ], price = 5.0 }
+    get "Endangered species chocolate (bar)"
+    --> Just { footprint = {air = 0, water = 0, land = 0 }, price = 5.0, requires = [ ( "Cocoa (g)", 74.8 ), ( "Sugar (g)", 13.2 ) ] }
 
 -}
-getProduct : String -> Maybe Product
-getProduct name =
+get : String -> Maybe { footprint : Footprint, price : Float, requires : List ( String, Float ) }
+get name =
     Dict.fromList
-        [ ( "Endangered species chocolate"
-          , { materials = [ ( "Cocoa", 74.8 ), ( "Sugar", 13.2 ) ], price = 5.0 }
+        [ ( "Endangered species chocolate (bar)"
+          , { footprint = { air = 0, water = 0, land = 0 }
+            , price = 5.0
+            , requires = [ ( "Cocoa (g)", 74.8 ), ( "Sugar (g)", 13.2 ) ]
+            }
           )
-        , ( "KitKat"
-          , { materials = [ ( "Cocoa", 83.82 ), ( "Sugar", 43.18 ) ], price = 1.5 }
+        , ( "KitKat (bar)"
+          , { footprint = { air = 0, water = 0, land = 0 }
+            , price = 1.5
+            , requires = [ ( "Cocoa (g)", 83.82 ), ( "Sugar (g)", 43.18 ) ]
+            }
           )
+        , ( "Cocoa (g)", { footprint = { air = 0, water = 17, land = 0.02 }, requires = [], price = 0 } )
+        , ( "Sugar (g)", { footprint = { air = 0, water = 17, land = 0.02 }, requires = [], price = 0 } )
         ]
         |> Dict.get name
 
 
-{-| Resources table.
+{-| Collect the footprint for a single unit of a product (recursive).
 
-    getMaterialResources "Cocoa"
-    --> Just { airCubicMeters = 0, waterLitersPerUnit = 17, unitsPerHectare = 500000 }
+    collect "Cocoa (g)" --> Just { footprint = { air = 0, water = 17, land = 0.02 }, price = 0 }
 
--}
-getMaterialResources : String -> Maybe Resources
-getMaterialResources name =
-    Dict.fromList
-        [ ( "Cocoa", { airCubicMeters = 0, waterLitersPerUnit = 17, unitsPerHectare = 500 * 1000 } )
-        , ( "Sugar", { airCubicMeters = 0, waterLitersPerUnit = 17, unitsPerHectare = 500 * 1000 } )
-        ]
-        |> Dict.get name
-
-
-
--- Resource microservices
-
-
-{-| Air resource cost.
--}
-airCost : Float -> Maybe Float
-airCost air =
-    Just 0
-
-
-{-| Water resource cost.
-
-    waterCost 17 --> Just 0.006835933551541786 -- per gram
+    collect "Endangered species chocolate (bar)" --> Just { footprint = { air = 0, water = 1496.0, land = 1.76 }, price = 5.0 }
 
 -}
-waterCost : Float -> Maybe Float
-waterCost waterLiters =
-    let
-        costPerAcreFoot =
-            496
+collect : String -> Maybe { footprint : Footprint, price : Float }
+collect productName =
+    Maybe.andThen
+        (\{ footprint, price, requires } ->
+            List.foldl
+                (Maybe.map2 (\x y -> { air = x.air + y.air, water = x.water + y.water, land = x.land + y.land }))
+                (Just footprint)
+                (List.map collectMany requires |> List.map (Maybe.map .footprint))
+                |> Maybe.map (\fp -> { footprint = fp, price = price })
+        )
+        (get productName)
 
-        costPerLiter =
-            costPerAcreFoot / 1233481.85532
-    in
-    Just (waterLiters * costPerLiter)
 
+{-| Collect the footprint for multiple units of a product (recursive).
 
-{-| Land resource cost.
-
-    landCost 500000 --> Just 0.001089 -- per gram
+    collectMany ( "Cocoa (g)", 2 ) --> Just { footprint = { air = 0, water = 34, land = 0.04 }, price = 0 }
 
 -}
-landCost : Float -> Maybe Float
-landCost yieldPerHectare =
-    let
-        costPerAcre =
-            220
-
-        costPerHectare =
-            costPerAcre * 2.475
-    in
-    Just (1 / yieldPerHectare * costPerHectare)
+collectMany : ( String, Float ) -> Maybe { footprint : Footprint, price : Float }
+collectMany ( productName, units ) =
+    Maybe.map
+        (\{ footprint, price } ->
+            { footprint = { air = footprint.air * units, water = footprint.water * units, land = footprint.land * units }
+            , price = price
+            }
+        )
+        (collect productName)
 
 
 
@@ -109,60 +79,65 @@ landCost yieldPerHectare =
 
 {-| Gaia ratio for a product.
 
-    gaiaRatio "Endangered species chocolate" --> Just 0.8605211694928645
+    collect "Endangered species chocolate (bar)"
+        |> Maybe.andThen gaiaRatio
+    --> Just 0.860552407644582
 
-    gaiaRatio "KitKat" --> Just 0.3290222926361288
-
--}
-gaiaRatio : String -> Maybe Float
-gaiaRatio productName =
-    Maybe.map (\{ cost, price } -> (price - cost) / price)
-        (getProduct productName |> Maybe.andThen productMetrics)
-
-
-
--- Internal functions
-
-
-{-|
-
-    productMetrics { materials = [ ( "Cocoa", 74.8 ), ( "Sugar", 13.2 ) ], price = 5.0 }
-    --> Just { cost = 0.6973941525356773, price = 5.0 }
+    collect "KitKat (bar)"
+        |> Maybe.andThen gaiaRatio
+    --> Just 0.3291725670781022
 
 -}
-productMetrics : Product -> Maybe Metrics
-productMetrics { materials, price } =
-    Maybe.map (\cost -> { cost = cost, price = price })
-        (materialsCost materials)
+gaiaRatio : { footprint : Footprint, price : Float } -> Maybe Float
+gaiaRatio { footprint, price } =
+    Maybe.map (\cost -> (price - cost) / price)
+        (footprintCost footprint)
 
 
-{-| Calculate the total materials cost.
 
-    materialsCost [ ( "Cocoa", 74.8 ), ( "Sugar", 13.2 ) ]
-    --> Just 0.6973941525356773
+-- Footprint cost microservices
+
+
+{-| Air resource cost.
+-}
+airCost : Float -> Maybe Float
+airCost cubicMeters =
+    Just 0
+
+
+{-| Water resource cost.
+
+    waterCost 1 --> Just 0.00040211373832598743 -- dollars per liter
 
 -}
-materialsCost : Materials -> Maybe Float
-materialsCost materials =
-    materials
-        |> List.map
-            (\( material, amount ) ->
-                getMaterialResources material
-                    |> Maybe.andThen resourcesCost
-                    |> Maybe.map ((*) amount)
-            )
-        |> List.foldl (Maybe.map2 (+)) (Just 0)
+waterCost : Float -> Maybe Float
+waterCost liters =
+    let
+        dollarsPerLiter =
+            -- dollarsPerAcreFoot / litersPerAcreFoot
+            496 / 1233481.85532
+    in
+    Just (liters * dollarsPerLiter)
 
 
-{-| Calculates the total resources costs.
+{-| Land resource cost.
 
-    resourcesCost { airCubicMeters = 0, waterLitersPerUnit = 17, unitsPerHectare = 500000 }
-    --> Just 0.007924933551541787 -- per gram
+    landCost 1 --> Just 0.05436125525080306 -- dollars per square meter
 
 -}
-resourcesCost : Resources -> Maybe Float
-resourcesCost { airCubicMeters, waterLitersPerUnit, unitsPerHectare } =
-    Maybe.map3 (\air water land -> air + water + land)
-        (airCost airCubicMeters)
-        (waterCost waterLitersPerUnit)
-        (landCost unitsPerHectare)
+landCost : Float -> Maybe Float
+landCost squareMeters =
+    let
+        dollarsPerSquareMeter =
+            -- dollarsPerAcre / squareMetersPerAcre
+            220 / 4047
+    in
+    Just (squareMeters * dollarsPerSquareMeter)
+
+
+footprintCost : Footprint -> Maybe Float
+footprintCost { air, water, land } =
+    Maybe.map3 (\x y z -> x + y + z)
+        (airCost air)
+        (waterCost water)
+        (landCost land)
