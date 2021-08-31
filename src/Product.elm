@@ -1,29 +1,44 @@
 module Product exposing (..)
 
-import Dict
-import Footprint exposing (Footprint)
+import Area exposing (Area(..))
+import Dict exposing (Dict)
+import Location exposing (Location(..))
+import Resources exposing (Resources)
+import Volume exposing (Volume(..))
+
+
+type alias Product =
+    { from : Location
+    , uses : Resources
+    , requires : Dict String Float
+    }
 
 
 {-| Products table.
 
+    import Area exposing (Area(..))
+    import Dict
+    import Location exposing (Location(..))
+    import Volume exposing (Volume(..))
+
     get "Endangered species chocolate (bar)"
-    --> Just { footprint = {air = 0, water = 0, land = 0 }, requires = [ ( "Cocoa (g)", 74.8 ), ( "Sugar (g)", 13.2 ) ] }
+    --> Just { from = UnitedStates, uses = { air = Liters 0, water = Liters 0, land = SquareMeters 0 }, requires = Dict.fromList [ ( "Cocoa (g)", 74.8 ), ( "Sugar (g)", 13.2 ) ] }
 
 -}
-get : String -> Maybe { footprint : Footprint, requires : List ( String, Float ) }
+get : String -> Maybe Product
 get name =
     Dict.fromList
         [ ( "Endangered species chocolate (bar)"
-          , { footprint = { air = 0, water = 0, land = 0 }, requires = [ ( "Cocoa (g)", 74.8 ), ( "Sugar (g)", 13.2 ) ] }
+          , { from = UnitedStates, uses = { air = Liters 0, water = Liters 0, land = SquareMeters 0 }, requires = Dict.fromList [ ( "Cocoa (g)", 74.8 ), ( "Sugar (g)", 13.2 ) ] }
           )
         , ( "KitKat (bar)"
-          , { footprint = { air = 0, water = 0, land = 0 }, requires = [ ( "Cocoa (g)", 83.82 ), ( "Sugar (g)", 43.18 ) ] }
+          , { from = UnitedStates, uses = { air = Liters 0, water = Liters 0, land = SquareMeters 0 }, requires = Dict.fromList [ ( "Cocoa (g)", 83.82 ), ( "Sugar (g)", 43.18 ) ] }
           )
         , ( "Cocoa (g)"
-          , { footprint = { air = 0, water = 17, land = 0.02 }, requires = [] }
+          , { from = UnitedStates, uses = { air = Liters 0, water = Liters 17, land = SquareMeters 0.02 }, requires = Dict.empty }
           )
         , ( "Sugar (g)"
-          , { footprint = { air = 0, water = 17, land = 0.02 }, requires = [] }
+          , { from = UnitedStates, uses = { air = Liters 0, water = Liters 17, land = SquareMeters 0.02 }, requires = Dict.empty }
           )
         ]
         |> Dict.get name
@@ -31,20 +46,23 @@ get name =
 
 {-| Collect the footprint for a single unit of a product (recursive).
 
-    totalFootprint "Cocoa (g)" --> Just { air = 0, water = 17, land = 0.02 }
+    import Area exposing (Area(..))
+    import Volume exposing (Volume(..))
 
-    totalFootprint "Endangered species chocolate (bar)" --> Just { air = 0, water = 1496.0, land = 1.76 }
+    totalResources "Cocoa (g)" --> Just { air = Liters 0, water = Liters 17, land = SquareMeters 0.02 }
+    totalResources "Endangered species chocolate (bar)" --> Just { air = Liters 0, water = Liters 1496.0, land = SquareMeters 1.76 }
 
 -}
-totalFootprint : String -> Maybe Footprint
-totalFootprint productName =
+totalResources : String -> Maybe Resources
+totalResources productName =
     Maybe.andThen
-        (\{ footprint, requires } ->
-            List.map
-                (\( name, units ) -> Maybe.map (Footprint.map ((*) units)) (totalFootprint name))
+        (\{ uses, requires } ->
+            Dict.map
+                (\name units -> Maybe.map (Resources.map ((*) units)) (totalResources name))
                 requires
+                |> Dict.values
                 |> List.foldl
-                    (Maybe.map2 (Footprint.map2 (+)))
-                    (Just footprint)
+                    (Maybe.map2 (Resources.map2 (+)))
+                    (Just uses)
         )
         (get productName)
