@@ -1,7 +1,8 @@
 {
   "root": "../src",
   "tests": [
-    "Microservice",
-    "Product"
+    "GaiaRatio",
+    "Product",
+    "Resources"
   ]
 }
