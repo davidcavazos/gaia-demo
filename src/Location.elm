@@ -4,4 +4,6 @@ module Location exposing (..)
 
 
 type Location
-    = UnitedStates
+    = Canada
+    | Mexico
+    | UnitedStates
